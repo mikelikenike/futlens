@@ -1,6 +1,8 @@
 {
   "name": "futlens",
   "version": "0.1.0",
+  "description": "Evidence-backed football match intelligence, replay and broadcast overlays.",
+  "author": "Mike Siu",
   "private": true,
   "scripts": {
     "dev": "next dev",
