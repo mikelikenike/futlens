@@ -2,7 +2,8 @@ import { Suspense } from "react";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { notFound } from "next/navigation";
-import MatchStudio from "./match-studio";
+import MatchExperience from "./match-experience";
+import type { HistorianContext } from "./historian-agent";
 import type { MatchData, MatchEvent, MatchPlayer, MatchQualifier, MatchStat } from "./types";
 
 type FixtureEvent = {
@@ -153,7 +154,19 @@ async function loadMatch(id: string) {
     const fixtureId = fixture.sport_event.id.split(":").at(-1);
     if (fixtureId !== id) notFound();
     const match: MatchData = normalizeFixture(id, fixture);
-    return <MatchStudio match={match} />;
+    const historianContext: HistorianContext = {
+      competition: match.competition,
+      season: match.season,
+      startTime: match.startTime,
+      venue: match.venue,
+      city: match.city,
+      homeTeam: match.teams.home.name,
+      awayTeam: match.teams.away.name,
+      homeLineup: match.startingLineups.home.map((player) => player.name),
+      awayLineup: match.startingLineups.away.map((player) => player.name),
+    };
+
+    return <MatchExperience match={match} historianContext={historianContext} />;
   } catch (error) {
     if (error instanceof Error && error.message === "NEXT_NOT_FOUND") throw error;
     notFound();
@@ -166,7 +179,7 @@ export default function MatchPage({
   params: Promise<{ id: string }>;
 }) {
   return (
-    <Suspense fallback={<main>Loading match...</main>}>
+    <Suspense fallback={<main className="min-h-screen bg-[#f1f3ed] p-8 font-sans text-[#1c3028]">Preparing the team history...</main>}>
       {params.then(({ id }) => loadMatch(id))}
     </Suspense>
   );
