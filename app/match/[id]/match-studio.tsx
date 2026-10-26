@@ -12,9 +12,8 @@ const text = {
     replay: "Match replay", matchMoments: "Match moments", kickOff: "Kick-off", goal: "Goal", fullTime: "Full time",
     pause: "Pause", play: "Play", insight: "Match intelligence", fan: "Fan", analyst: "Analyst", evidence: "Inspect evidence",
     headline: "Shot volume comparison", insufficient: "Comparable shot totals are unavailable for this match.",
-    caution: "Aggregate totals do not establish tactical cause", totals: "Match statistics", totalsHint: "Counts update with replay events; possession is available at full time", overlay: "Broadcast overlay", recap: "Full-time recap",
-    copy: "Copy JSON", copied: "Copied", generate: "Generate recap", source: "Supplied match totals",
-    replayView: "REPLAY SIMULATION", reference: "MATCH REFERENCE", loading: "Loading match...", matchClock: "MATCH CLOCK", measure: "MEASURE", supported: "SUPPORTED", template: "Template generated · no model request", goalFor: "scores for", fanShot: "recorded {awayShots} {shotUnit} compared with {homeShots} for {homeTeam}.", fanTarget: "{awayTarget} {targetUnit} for {awayTeam}, compared with {homeTarget} for {homeTeam}.", analystShot: "{awayTeam}: {awayShots} {shotUnit} ({awayTarget} {targetUnit}); {homeTeam}: {homeShots} ({homeTarget} {targetUnit}). Difference: {shotDifference} shots and {targetDifference} on target.", recapIntro: "Final score:", shotsLabel: "shots", targetLabel: "on target",
+    caution: "Aggregate totals do not establish tactical cause", totals: "Match statistics", totalsHint: "Counts update with replay events; possession is available at full time", source: "Supplied match totals",
+    replayView: "REPLAY SIMULATION", reference: "MATCH REFERENCE", loading: "Loading match...", matchClock: "MATCH CLOCK", measure: "MEASURE", template: "Template generated · no model request", fanShot: "recorded {awayShots} {shotUnit} compared with {homeShots} for {homeTeam}.", fanTarget: "{awayTarget} {targetUnit} for {awayTeam}, compared with {homeTarget} for {homeTeam}.", analystShot: "{awayTeam}: {awayShots} {shotUnit} ({awayTarget} {targetUnit}); {homeTeam}: {homeShots} ({homeTarget} {targetUnit}). Difference: {shotDifference} shots and {targetDifference} on target.", shotsLabel: "shots", targetLabel: "on target",
   },
 } as const;
 
@@ -219,9 +218,7 @@ export default function MatchStudio({ match }: { match: MatchData }) {
   const [audience, setAudience] = useState<Audience>("fan");
   const [language, setLanguage] = useState<Language>("en");
   const [showEvidence, setShowEvidence] = useState(false);
-  const [showOverlay, setShowOverlay] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [showRecap, setShowRecap] = useState(false);
+  const [showLineups, setShowLineups] = useState(false);
   const words = text[language];
 
   useEffect(() => {
@@ -254,48 +251,30 @@ export default function MatchStudio({ match }: { match: MatchData }) {
   const shotsOnTarget = replayStats.find((stat) => stat.key === "shots_on_target");
   const teamsByQualifier = { home: match.teams.home, away: match.teams.away };
   const scorerTeam = scoreEvent?.competitor ? teamsByQualifier[scoreEvent.competitor] : match.teams.away;
-  const scorer = scoreEvent?.scorer;
-  const scorerName = scorer?.replace(/,\s*/, " ") ?? "";
+  const scorerName = scoreEvent?.scorer?.replace(/,\s*/, " ") ?? "";
+  const goalEventKeys = new Set(match.events
+    .filter((event) => event.type === "score_change" && event.competitor)
+    .map((event) => `${event.timeSeconds}:${event.competitor}`));
+  const shotEvents = match.events.filter((event) =>
+    (event.type === "score_change" || (event.type.startsWith("shot_") && !goalEventKeys.has(`${event.timeSeconds}:${event.competitor}`)))
+    && event.timeSeconds <= seconds
+    && event.location
+    && event.competitor,
+  );
   const evidenceSources = [
     ...(shots && shots.home !== null && shots.away !== null ? [{ label: "STAT / SHOTS", value: `${match.teams.home.name} ${shots.home} · ${match.teams.away.name} ${shots.away}` }] : []),
     ...(shotsOnTarget && shotsOnTarget.home !== null && shotsOnTarget.away !== null ? [{ label: "STAT / ON TARGET", value: `${match.teams.home.name} ${shotsOnTarget.home} · ${match.teams.away.name} ${shotsOnTarget.away}` }] : []),
     ...(scoreEvent ? [{ label: "EVENT / SCORE", value: [scorerName, scorerTeam?.name, eventClock(scoreEvent), scoreEvent.assist].filter(Boolean).join(" · ") }] : []),
   ];
-  const sourceGoalId = scoreEvent?.id ?? "";
-  const finalShots = match.stats.find((stat) => stat.key === "shots_total");
-  const finalShotsOnTarget = match.stats.find((stat) => stat.key === "shots_on_target");
   const isFullTime = seconds >= match.durationSeconds;
   const shotUnit = isFullTime ? words.shotsLabel : "shot events";
   const targetUnit = isFullTime ? words.targetLabel : "on-target events";
-
-  const overlay = {
-    matchId: match.id,
-    match: `${match.teams.home.name} vs ${match.teams.away.name}`,
-    eventTime: scoreEvent ? eventClock(scoreEvent) : "",
-    headline: scorer && scorerTeam ? `${scorerName} ${words.goalFor} ${scorerTeam.name}` : words.goal,
-    copy: [scorer && scorerName, scorerTeam?.name, scoreEvent?.assist].filter(Boolean).join(" · "),
-    durationSeconds: 8,
-    evidenceReferences: sourceGoalId ? [`event.${sourceGoalId}`] : [],
-    reviewStatus: "template-generated",
-  };
-
-  async function copyOverlay() {
-    try {
-      await navigator.clipboard.writeText(JSON.stringify(overlay, null, 2));
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1800);
-    } catch {
-      setShowOverlay(true);
-    }
-  }
 
   const insight = shots && shotsOnTarget && shots.home !== null && shots.away !== null && shotsOnTarget.home !== null && shotsOnTarget.away !== null
     ? audience === "fan"
       ? `${match.teams.away.name} ${words.fanShot.replace("{awayShots}", String(shots.away)).replace("{shotUnit}", shotUnit).replace("{homeShots}", String(shots.home)).replace("{homeTeam}", match.teams.home.name)} ${words.fanTarget.replace("{awayTarget}", String(shotsOnTarget.away)).replace("{targetUnit}", targetUnit).replace("{awayTeam}", match.teams.away.name).replace("{homeTarget}", String(shotsOnTarget.home)).replace("{homeTeam}", match.teams.home.name)}`
       : words.analystShot.replace("{awayTeam}", match.teams.away.name).replace("{awayShots}", String(shots.away)).replace("{shotUnit}", shotUnit).replace("{awayTarget}", String(shotsOnTarget.away)).replaceAll("{targetUnit}", targetUnit).replace("{homeTeam}", match.teams.home.name).replace("{homeShots}", String(shots.home)).replace("{homeTarget}", String(shotsOnTarget.home)).replace("{shotDifference}", String(Math.abs(shots.away - shots.home))).replace("{targetDifference}", String(Math.abs(shotsOnTarget.away - shotsOnTarget.home)))
     : words.insufficient;
-
-  const recap = `${words.recapIntro} ${match.teams.home.name} ${match.finalScore.home}–${match.finalScore.away} ${match.teams.away.name}.${scoreEvent && scorer ? ` ${scorerName} ${words.goalFor} ${scorerTeam?.name ?? ""} at ${eventClock(scoreEvent)}${scoreEvent.assist ? ` (${scoreEvent.assist})` : ""}.` : ""}${finalShots && finalShotsOnTarget ? ` ${match.teams.home.name}: ${finalShots.home} ${words.shotsLabel}, ${finalShotsOnTarget.home} ${words.targetLabel}. ${match.teams.away.name}: ${finalShots.away} ${words.shotsLabel}, ${finalShotsOnTarget.away} ${words.targetLabel}.` : ""}`;
 
   return (
     <main className="min-h-screen bg-[#f1f3ed] font-sans text-[#1c3028] [&_p]:!text-xs [&_.insight-copy]:!text-sm [&_span]:!text-xs [&_li>span:first-child]:!text-[10px] [&_button]:!text-xs [&_label]:!text-xs [&_select]:!text-xs [&_time]:!text-xs [&_small]:!text-xs">
@@ -313,7 +292,7 @@ export default function MatchStudio({ match }: { match: MatchData }) {
       <div className="mx-auto w-[min(1280px,calc(100%-48px))] pb-6 max-sm:w-[calc(100%-24px)]">
         <section className="border-b border-[#d9dfd5] py-[23px] pb-5 max-[480px]:py-[18px] max-[480px]:pb-[15px]">
           <div>
-            <p className="m-0 text-[8px] font-bold tracking-[.12em] text-[#367254]">{match.competition} · {formatDate(match.startTime)}</p>
+            <p className="m-0 text-[8px] font-bold tracking-[.12em] text-[#367254]">{match.competition} · {match.season} · {formatDate(match.startTime)}</p>
             <p className="mt-1.5 text-[9px] text-[#748078]">{[match.venue, match.city].filter(Boolean).join(" · ")}</p>
           </div>
         </section>
@@ -324,28 +303,69 @@ export default function MatchStudio({ match }: { match: MatchData }) {
             <div className="mt-2 flex items-baseline justify-center gap-2 border-t border-[#e1e6df] pt-2"><span className="text-[8px] font-bold tracking-[.1em] text-[#738078]">{words.matchClock}</span><strong className="text-base tabular-nums">{formatClock(seconds)}<small className="text-[10px] text-[#367254]">{seconds === match.durationSeconds ? " FT" : "′"}</small></strong></div>
             <div className="relative isolate mt-3 min-h-[440px] overflow-hidden bg-[repeating-linear-gradient(90deg,#a0c378_0_10%,#4b865d_10%_20%)] text-[#eff5e4] max-[480px]:min-h-[500px]">
               <div className="absolute inset-0 -z-10 bg-gradient-to-b from-[#0d3222]/30 via-transparent to-[#0d3222]/50" />
-              <div className="absolute inset-[38px_9%_32px] border border-[#eaf2db]/50"><div className="absolute inset-y-0 left-1/2 border-l border-[#eaf2db]/40" /><div className="absolute left-1/2 top-1/2 size-[58px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-[#eaf2db]/40" /><span className="absolute inset-y-1/4 left-0 w-[12%] border-y border-r border-[#eaf2db]/40" /><span className="absolute inset-y-1/4 right-0 w-[12%] border-y border-l border-[#eaf2db]/40" /><i className="absolute left-[32%] top-1/2 size-1 -translate-y-1/2 rounded-full bg-[#eaf2db]" /></div>
-              <div className="absolute left-4 right-4 top-3 flex justify-between gap-2 text-[7px] font-bold tracking-[.1em] text-[#eff5e4]/75"><span className="max-w-[35%] truncate">{match.teams.home.name}</span><span className="truncate text-center">{match.competition} · {match.season}</span><span className="max-w-[35%] truncate text-right">{match.teams.away.name}</span></div>
-              <div className="absolute bottom-3 left-3 top-11 z-10 w-[29%] overflow-y-hidden bg-[#17372d]/85 p-2 max-[480px]:bottom-2 max-[480px]:left-1 max-[480px]:top-[76px] max-[480px]:w-[48%]">
-                <h2 className="mb-1 border-b border-white/20 pb-1 text-[9px] font-bold uppercase tracking-wide text-white/80">On pitch</h2>
-                <ul className="m-0 grid list-none gap-0.5 p-0">{homeLineup.active.map((player) => <li className="truncate text-[10px] leading-[1.25] text-white/90" key={player.id}><span className="text-[10px]">{displayPlayerName(player.name)}</span><PlayerBadges player={player} marks={playerMarks} /></li>)}</ul>
-                <h2 className="mb-1 mt-2 border-b border-white/20 pb-1 text-[9px] font-bold uppercase tracking-wide text-white/70">Bench</h2>
-                <ul className="m-0 grid list-none gap-0.5 p-0">{homeLineup.bench.map(({ player, substitutedOff }) => <li className="truncate text-[10px] leading-[1.25] text-white/75" key={player.id}><span className={`text-[10px] ${substitutedOff ? "line-through" : ""}`}>{displayPlayerName(player.name)}</span><PlayerBadges player={player} marks={playerMarks} /></li>)}</ul>
+              <div className="absolute inset-[38px_9%_32px] border border-[#eaf2db]/60">
+                <span className="absolute bottom-0 left-1/2 top-0 w-px -translate-x-1/2 bg-[#eaf2db]/55" />
+                <span className="absolute left-1/2 top-1/2 aspect-square h-[26%] -translate-x-1/2 -translate-y-1/2 rounded-full border border-[#eaf2db]/55" />
+                <span className="absolute left-1/2 top-1/2 size-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#eaf2db]/75" />
+                <span className="absolute inset-y-[20%] left-0 w-[16%] border-y border-r border-[#eaf2db]/55" />
+                <span className="absolute inset-y-[20%] right-0 w-[16%] border-y border-l border-[#eaf2db]/55" />
+                <span className="absolute inset-y-[36%] left-0 w-[5%] border-y border-r border-[#eaf2db]/55" />
+                <span className="absolute inset-y-[36%] right-0 w-[5%] border-y border-l border-[#eaf2db]/55" />
+                <span className="absolute left-[10.5%] top-1/2 size-1 -translate-y-1/2 rounded-full bg-[#eaf2db]/70" />
+                <span className="absolute right-[10.5%] top-1/2 size-1 -translate-y-1/2 rounded-full bg-[#eaf2db]/70" />
+                {shotEvents.map((event) => {
+                  if (!event.location || !event.competitor) return null;
+                  const team = match.teams[event.competitor];
+                  const player = event.scorer ?? event.participants[0]?.name ?? "Unknown player";
+                  const details = `${team.name} · ${displayPlayerName(player)} · ${eventClock(event)}`;
+                  const isGoal = event.type === "score_change";
+
+                  return <span
+                    key={event.id}
+                    className="absolute z-10 -translate-x-1/2 -translate-y-1/2 cursor-help text-[11px] leading-none drop-shadow-[0_1px_2px_#17372d]"
+                    style={{ left: `${event.location.x}%`, top: `${event.location.y}%` }}
+                    title={details}
+                    role="img"
+                    aria-label={`${isGoal ? "Goal" : "Shot"}: ${details}`}
+                  >{isGoal ? <>&#9917;</> : <>&#10060;</>}</span>;
+                })}
               </div>
-              <div className="absolute bottom-3 right-3 top-11 z-10 w-[29%] overflow-y-hidden bg-[#17372d]/85 p-2 max-[480px]:bottom-2 max-[480px]:right-1 max-[480px]:top-[76px] max-[480px]:w-[48%]">
-                <h2 className="mb-1 border-b border-white/20 pb-1 text-[9px] font-bold uppercase tracking-wide text-white/80">On pitch</h2>
-                <ul className="m-0 grid list-none gap-0.5 p-0">{awayLineup.active.map((player) => <li className="truncate text-[10px] leading-[1.25] text-white/90" key={player.id}><span className="text-[10px]">{displayPlayerName(player.name)}</span><PlayerBadges player={player} marks={playerMarks} /></li>)}</ul>
-                <h2 className="mb-1 mt-2 border-b border-white/20 pb-1 text-[9px] font-bold uppercase tracking-wide text-white/70">Bench</h2>
-                <ul className="m-0 grid list-none gap-0.5 p-0">{awayLineup.bench.map(({ player, substitutedOff }) => <li className="truncate text-[10px] leading-[1.25] text-white/75" key={player.id}><span className={`text-[10px] ${substitutedOff ? "line-through" : ""}`}>{displayPlayerName(player.name)}</span><PlayerBadges player={player} marks={playerMarks} /></li>)}</ul>
-              </div>
-              <div className="absolute left-1/2 top-1/2 z-10 flex w-[38%] -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-1.5 text-center [text-shadow:0_2px_12px_#10291e66] max-[480px]:top-3 max-[480px]:w-[90%] max-[480px]:-translate-y-0">
-                <span className="bg-[#d3ed64] px-2 py-1 text-[9px] font-bold tracking-wide text-[#18372d] [text-shadow:none]">{activeEvent ? `${eventClock(activeEvent)} · ${replayEventLabel(activeEvent, language)}` : words.replayView}</span>
-                <strong className="text-2xl font-bold tabular-nums leading-none max-[480px]:text-xl">{currentScore.home} <i className="text-lg not-italic text-white/75">:</i> {currentScore.away}</strong>
-                <strong className="text-base font-bold leading-tight max-[480px]:text-sm">{activeEvent ? (activeEvent.scorer ? displayPlayerName(activeEvent.scorer) : activeEvent.participants[0] ? displayPlayerName(activeEvent.participants[0].name) : (activeEvent.competitor ? match.teams[activeEvent.competitor].name : replayEventLabel(activeEvent, language))) : `${match.teams.home.name} · ${match.teams.away.name}`}</strong>
-                <span className="max-w-full text-[10px] leading-tight">{activeEvent ? eventDetails(activeEvent, match) : match.competition}</span>
+              <div className="absolute left-4 right-4 top-3 z-10 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 text-[7px] font-bold tracking-[.1em] text-[#eff5e4]/90 max-[480px]:left-2 max-[480px]:right-2">
+                <span className="truncate">{match.teams.home.name}</span>
+                <span className="text-sm tabular-nums text-white" aria-label={`Score ${match.teams.home.name} ${currentScore.home}, ${match.teams.away.name} ${currentScore.away}`}>{currentScore.home} <i className="px-0.5 text-xs not-italic text-white/70">:</i> {currentScore.away}</span>
+                <span className="truncate text-right">{match.teams.away.name}</span>
               </div>
               <span className="absolute bottom-2 right-3 text-[11px] font-bold">{formatClock(seconds)} <small className="font-normal text-[#eff5e4]/75">/ {formatClock(match.durationSeconds)}</small></span>
             </div>
+            <section className="mt-2 rounded-[3px] border border-[#dfe4dc] bg-[#fcfdf9] px-4 py-3 text-center" aria-label="Current match event" aria-live="polite">
+              <p className="m-0 text-[8px] font-bold uppercase tracking-[.1em] text-[#367254]">{activeEvent ? `${eventClock(activeEvent)} · ${replayEventLabel(activeEvent, language)}` : words.replayView}</p>
+              <h2 className="my-1 text-base font-bold leading-tight">{activeEvent ? (activeEvent.scorer ? displayPlayerName(activeEvent.scorer) : activeEvent.participants[0] ? displayPlayerName(activeEvent.participants[0].name) : (activeEvent.competitor ? match.teams[activeEvent.competitor].name : replayEventLabel(activeEvent, language))) : `${match.teams.home.name} · ${match.teams.away.name}`}</h2>
+              <p className="m-0 text-[10px] leading-tight text-[#65746a]">{activeEvent ? eventDetails(activeEvent, match) : match.competition}</p>
+            </section>
+            <section className="mt-2 border border-[#dfe4dc] bg-[#fcfdf9]" aria-labelledby="lineups-title">
+              <button className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-bold" type="button" aria-expanded={showLineups} aria-controls="lineups-panel" onClick={() => setShowLineups((value) => !value)}>
+                <span id="lineups-title">Player lineups</span>
+                <span className="ml-auto text-[10px] font-normal text-[#748078]">{match.teams.home.name} · {match.teams.away.name}</span>
+                <b className="text-sm text-[#286248]">{showLineups ? "−" : "+"}</b>
+              </button>
+              {showLineups && <div id="lineups-panel" className="grid grid-cols-2 gap-3 border-t border-[#e1e6df] p-3 max-[480px]:grid-cols-1">
+                {([{ qualifier: "home", team: match.teams.home, lineup: homeLineup }, { qualifier: "away", team: match.teams.away, lineup: awayLineup }] as const).map(({ qualifier, team, lineup }) => (
+                  <section className="min-w-0" key={qualifier} aria-label={`${team.name} lineup`}>
+                    <h2 className="mb-2 truncate text-xs font-bold">{team.name}</h2>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="min-w-0">
+                        <h3 className="mb-1 border-b border-[#e1e6df] pb-1 text-[9px] font-bold uppercase tracking-wide text-[#367254]">On pitch</h3>
+                        <ul className="m-0 grid list-none gap-1 p-0">{lineup.active.map((player) => <li className="truncate text-[10px] leading-[1.25]" key={player.id}><span>{displayPlayerName(player.name)}</span><PlayerBadges player={player} marks={playerMarks} /></li>)}</ul>
+                      </div>
+                      <div className="min-w-0">
+                        <h3 className="mb-1 border-b border-[#e1e6df] pb-1 text-[9px] font-bold uppercase tracking-wide text-[#748078]">Bench</h3>
+                        <ul className="m-0 grid list-none gap-1 p-0">{lineup.bench.map(({ player, substitutedOff }) => <li className="truncate text-[10px] leading-[1.25]" key={player.id}><span className={substitutedOff ? "line-through text-[#98a198]" : ""}>{displayPlayerName(player.name)}</span><PlayerBadges player={player} marks={playerMarks} /></li>)}</ul>
+                      </div>
+                    </div>
+                  </section>
+                ))}
+              </div>}
+            </section>
             <div className="grid grid-cols-[auto_1fr_auto] items-center gap-3 py-3 max-[480px]:gap-2">
               <button className="flex h-[31px] min-w-[102px] items-center gap-2 bg-[#17372d] px-2.5 text-[9px] text-white max-[480px]:min-w-[89px] max-[480px]:px-2 max-[480px]:text-[8px]" type="button" onClick={() => setPlaying((value) => !value)}><span className="text-[#d3ed64]">{playing ? "Ⅱ" : "▶"}</span>{playing ? words.pause : words.play}</button>
               <div className="min-w-[50px]"><input className="mb-1 block h-1 w-full cursor-pointer appearance-none bg-[linear-gradient(to_right,#286248_var(--progress),#dfe4dc_var(--progress))] [&::-webkit-slider-thumb]:size-2.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-white [&::-webkit-slider-thumb]:bg-[#286248]" aria-label="Replay time" type="range" min="0" max={match.durationSeconds} value={seconds} onChange={(event) => { setSeconds(Number(event.target.value)); setPlaying(false); }} style={{ "--progress": `${seconds / match.durationSeconds * 100}%` } as React.CSSProperties} /><div className="flex justify-between text-[7px] text-[#89938b]"><span>00:00</span><span>{formatClock(match.durationSeconds / 2)}</span><span>{formatClock(match.durationSeconds)}</span></div></div>
@@ -359,7 +379,7 @@ export default function MatchStudio({ match }: { match: MatchData }) {
           </section>
 
           <section className="min-w-0 rounded-[3px] border border-[#dfe4dc] bg-[#fcfdf9] p-4 max-sm:p-3.5" aria-labelledby="insight-title">
-            <div className="flex items-center justify-between gap-3"><div><p className="mb-1 text-[8px] font-bold tracking-[.12em] text-[#367254]">02 / INTERPRET</p><h2 id="insight-title" className="m-0 text-lg font-bold uppercase">{words.insight}</h2></div><span className="bg-[#edf2e8] px-2 py-1 text-[7px] font-bold text-[#287247]">✓ {words.supported}</span></div>
+            <div className="flex items-center justify-between gap-3"><div><p className="mb-1 text-[8px] font-bold tracking-[.12em] text-[#367254]">02 / INTERPRET</p><h2 id="insight-title" className="m-0 text-lg font-bold uppercase">{words.insight}</h2></div></div>
             <div className="my-3 inline-flex gap-0.5 bg-[#edf0e9] p-0.5" role="group" aria-label="Audience wording"><button className={`min-w-[65px] px-2 py-1.5 text-[8px] ${audience === "fan" ? "bg-white font-bold text-[#1c3028] shadow-sm" : "text-[#6c796f]"}`} type="button" onClick={() => setAudience("fan")}>{words.fan}</button><button className={`min-w-[65px] px-2 py-1.5 text-[8px] ${audience === "analyst" ? "bg-white font-bold text-[#1c3028] shadow-sm" : "text-[#6c796f]"}`} type="button" onClick={() => setAudience("analyst")}>{words.analyst}</button></div>
             <article className="border-l-[3px] border-[#286248] bg-[#f0f3ed] p-[13px]"><span className="text-[7px] font-bold tracking-[.08em] text-[#728076]">{words.insight} · {words.totals}</span><h2 className="my-2 text-[17px] font-bold leading-tight">{words.headline}</h2><p className="insight-copy m-0 leading-[1.7] text-[#48594e]">{insight}</p><div className="mt-2 flex items-center gap-1.5 border-t border-[#dfe5db] pt-2 text-[7px] text-[#718075]"><b className="grid size-3 place-items-center rounded-full border border-[#a0afa2] text-[8px]">i</b>{words.caution}</div></article>
             <div className="border-b border-[#e1e6df]"><button className="flex w-full items-center gap-2 py-3 text-left text-[8px] font-bold" type="button" aria-expanded={showEvidence} onClick={() => setShowEvidence((value) => !value)}>{words.evidence}<span className="ml-auto text-[7px] text-[#879188]">{evidenceSources.length}</span><b className="text-xs text-[#286248]">{showEvidence ? "−" : "+"}</b></button>{showEvidence && <div className="grid gap-2 pb-2.5">{evidenceSources.map(({ label, value }) => <div className="grid grid-cols-[100px_1fr] gap-x-2 gap-y-0.5 text-[8px]" key={label}><strong className="row-span-2 text-[7px] text-[#367254]">{label}</strong><span>{value}</span><small className="text-[7px] text-[#7b877d]">{words.source}</small></div>)}</div>}</div>
@@ -367,7 +387,7 @@ export default function MatchStudio({ match }: { match: MatchData }) {
           </section>
         </div>
 
-        <div className="mt-[13px] grid grid-cols-[minmax(0,1.2fr)_minmax(350px,.8fr)] gap-[13px] max-[850px]:mt-2.5 max-[850px]:grid-cols-1 max-[850px]:gap-2.5">
+        <div className="mt-[13px] max-[850px]:mt-2.5">
           <section className="min-w-0 rounded-[3px] border border-[#dfe4dc] bg-[#fcfdf9] p-4 max-sm:p-3.5" aria-labelledby="totals-title">
             <div className="mb-2.5 flex items-center justify-between gap-4">
               <div className="shrink-0"><p className="mb-1 text-[8px] font-bold tracking-[.12em] text-[#367254]">03 / MATCH DATA</p><h2 id="totals-title" className="m-0 text-base font-bold uppercase">{words.totals}</h2></div>
@@ -390,12 +410,6 @@ export default function MatchStudio({ match }: { match: MatchData }) {
                 </div>;
               })}
             </div>
-          </section>
-          <section className="min-w-0 rounded-[3px] border border-[#dfe4dc] bg-[#fcfdf9] p-4 max-sm:p-3.5" aria-labelledby="outputs-title"><div className="mb-2.5 flex items-center justify-between gap-3"><div><p className="mb-1 text-[8px] font-bold tracking-[.12em] text-[#367254]">04 / PUBLISH</p><h2 id="outputs-title" className="m-0 text-base font-bold uppercase">Studio outputs</h2></div><span className="flex items-center gap-1 text-[7px] font-bold text-[#367254]"><i className="size-[5px] rounded-full bg-[#4f9d62]" /> READY</span></div>
-            <div className="flex min-h-[47px] items-center gap-2 border-t border-[#edf0e9]"><span className="grid size-7 flex-none place-content-center bg-[#17372d] text-center text-[7px] font-bold leading-none text-[#d3ed64]">ON<br />AIR</span><div className="min-w-0 flex-1"><h3 className="mb-0.5 text-[10px] font-bold uppercase">{words.overlay}</h3><p className="truncate text-[7px] text-[#77847b]">8 sec · evidence references · review status</p></div><button className="border border-[#d5dfd4] px-2 py-1.5 text-[7px] font-bold text-[#286248] hover:bg-[#edf4e9]" type="button" onClick={() => setShowOverlay((value) => !value)}>{showOverlay ? "Close" : "Preview"}</button></div>
-            {showOverlay && <div className="relative border-t border-[#e1e6df] bg-[#f0f3ed] p-2"><pre className="max-h-[145px] overflow-auto text-[7px] leading-relaxed text-[#34493c]">{JSON.stringify(overlay, null, 2)}</pre><button className="absolute bottom-2 right-2 border border-[#d5dfd4] bg-white px-2 py-1.5 text-[7px] font-bold text-[#286248] hover:bg-[#edf4e9]" type="button" onClick={copyOverlay}>{copied ? words.copied : words.copy}</button></div>}
-            <div className="flex min-h-[47px] items-center gap-2 border-t border-[#edf0e9]"><span className="grid size-7 flex-none place-content-center bg-[#eee8d8] text-center text-[7px] font-bold leading-none text-[#8d7040]">90<br />MIN</span><div className="min-w-0 flex-1"><h3 className="mb-0.5 text-[10px] font-bold uppercase">{words.recap}</h3><p className="truncate text-[7px] text-[#77847b]">{showRecap ? "Verified events and final statistics" : "Ready from supported match data"}</p></div><button className="border border-[#d5dfd4] px-2 py-1.5 text-[7px] font-bold text-[#286248] hover:bg-[#edf4e9]" type="button" onClick={() => setShowRecap((value) => !value)}>{showRecap ? "Close" : words.generate}</button></div>
-            {showRecap && <p className="insight-copy m-0 pl-[37px] pt-2 leading-relaxed text-[#55665a]">{recap}</p>}
           </section>
         </div>
         <footer className="flex justify-between gap-3 pt-4 text-[7px] font-bold tracking-[.08em] text-[#78847b] max-[480px]:text-[6px]"><span>FUTLENS · MATCH STORYLINE STUDIO</span><span>{words.reference}: {match.id}</span></footer>
