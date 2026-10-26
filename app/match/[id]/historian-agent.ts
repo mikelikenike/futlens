@@ -15,9 +15,14 @@ export type HistorianContext = {
   awayLineup: string[];
 };
 
-export async function generateTeamHistory(context: HistorianContext) {
-  if (!context?.homeTeam || !context.awayTeam) {
-    throw new Error("Historian context must include both team names.");
+export type PersonalizedHistorianContext = HistorianContext & {
+  fanLevel: "casual" | "hardcore";
+  teamSupport: "home" | "away" | "neutral";
+};
+
+export async function generateTeamHistory(context: PersonalizedHistorianContext) {
+  if (!context?.homeTeam || !context.awayTeam || !context.fanLevel || !context.teamSupport) {
+    throw new Error("Historian context is missing team or personalization details.");
   }
 
   const endpoint = process.env.AZURE_AI_PROJECT_ENDPOINT;
@@ -38,6 +43,8 @@ export async function generateTeamHistory(context: HistorianContext) {
     "Never include any information about context and whether it was used in your analysis in the response.",
     "When a detail is uncertain, omit it.",
     "Return readable prose with short headings.",
+    `Write for a ${context.fanLevel} football fan.`,
+    `The reader supports ${context.teamSupport === "home" ? context.homeTeam : context.teamSupport === "away" ? context.awayTeam : "neither team (neutral)"}. Personalize the framing for that perspective without changing facts or favoring one team in the history.`,
     "Fixture context:",
     `Competition: ${context.competition}`,
     `Season: ${context.season}`,

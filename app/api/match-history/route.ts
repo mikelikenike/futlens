@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { generateTeamHistory, type HistorianContext } from "../../match/[id]/historian-agent";
+import { generateTeamHistory, type PersonalizedHistorianContext } from "../../match/[id]/historian-agent";
 
-function isHistorianContext(value: unknown): value is HistorianContext {
+function isHistorianContext(value: unknown): value is PersonalizedHistorianContext {
   if (!value || typeof value !== "object") return false;
   const context = value as Record<string, unknown>;
   return typeof context.homeTeam === "string"
@@ -14,7 +14,9 @@ function isHistorianContext(value: unknown): value is HistorianContext {
     && Array.isArray(context.homeLineup)
     && context.homeLineup.every((name) => typeof name === "string")
     && Array.isArray(context.awayLineup)
-    && context.awayLineup.every((name) => typeof name === "string");
+    && context.awayLineup.every((name) => typeof name === "string")
+    && (context.fanLevel === "casual" || context.fanLevel === "hardcore")
+    && (context.teamSupport === "home" || context.teamSupport === "away" || context.teamSupport === "neutral");
 }
 
 export async function POST(request: Request) {
