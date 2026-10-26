@@ -219,6 +219,11 @@ export default function MatchStudio({ match }: { match: MatchData }) {
   const [language, setLanguage] = useState<Language>("en");
   const [showEvidence, setShowEvidence] = useState(false);
   const [showLineups, setShowLineups] = useState(false);
+  const [analysisResult, setAnalysisResult] = useState<string | null>(null);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [analysisLoading, setAnalysisLoading] = useState(false);
+  const [analysisAtSeconds, setAnalysisAtSeconds] = useState<number | null>(null);
+  const [analysisAudience, setAnalysisAudience] = useState<Audience | null>(null);
   const words = text[language];
 
   useEffect(() => {
@@ -275,6 +280,55 @@ export default function MatchStudio({ match }: { match: MatchData }) {
       ? `${match.teams.away.name} ${words.fanShot.replace("{awayShots}", String(shots.away)).replace("{shotUnit}", shotUnit).replace("{homeShots}", String(shots.home)).replace("{homeTeam}", match.teams.home.name)} ${words.fanTarget.replace("{awayTarget}", String(shotsOnTarget.away)).replace("{targetUnit}", targetUnit).replace("{awayTeam}", match.teams.away.name).replace("{homeTarget}", String(shotsOnTarget.home)).replace("{homeTeam}", match.teams.home.name)}`
       : words.analystShot.replace("{awayTeam}", match.teams.away.name).replace("{awayShots}", String(shots.away)).replace("{shotUnit}", shotUnit).replace("{awayTarget}", String(shotsOnTarget.away)).replaceAll("{targetUnit}", targetUnit).replace("{homeTeam}", match.teams.home.name).replace("{homeShots}", String(shots.home)).replace("{homeTarget}", String(shotsOnTarget.home)).replace("{shotDifference}", String(Math.abs(shots.away - shots.home))).replace("{targetDifference}", String(Math.abs(shotsOnTarget.away - shotsOnTarget.home)))
     : words.insufficient;
+
+  async function analyzeCurrentMatch() {
+    const requestedAtSeconds = seconds;
+    const requestedAudience = audience;
+    setAnalysisLoading(true);
+    setAnalysisError(null);
+    setAnalysisResult(null);
+
+    try {
+      const response = await fetch("/api/match-analysis", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          audience: requestedAudience,
+          atSeconds: requestedAtSeconds,
+          competition: match.competition,
+          season: match.season,
+          homeTeam: match.teams.home.name,
+          awayTeam: match.teams.away.name,
+          score: currentScore,
+          events: match.events
+            .filter((event) => event.timeSeconds <= requestedAtSeconds)
+            .map((event) => ({
+              timeSeconds: event.timeSeconds,
+              type: event.type,
+              team: event.competitor ? teamsByQualifier[event.competitor].name : undefined,
+              participants: event.participants.map((participant) => displayPlayerName(participant.name)),
+            })),
+          stats: replayStats.map((stat) => ({
+            label: stat.label,
+            home: stat.home,
+            away: stat.away,
+            suffix: stat.suffix,
+            live: stat.live,
+          })),
+        }),
+      });
+      const result = await response.json() as { analysis?: string; error?: string };
+      if (!response.ok || !result.analysis) throw new Error(result.error ?? "Analysis request failed.");
+      setAnalysisResult(result.analysis);
+      setAnalysisAtSeconds(requestedAtSeconds);
+      setAnalysisAudience(requestedAudience);
+    } catch (error) {
+      console.error("Unable to analyze match", error);
+      setAnalysisError("Analysis is unavailable right now. Try again in a moment.");
+    } finally {
+      setAnalysisLoading(false);
+    }
+  }
 
   return (
     <main className="min-h-screen bg-[#f1f3ed] font-sans text-[#1c3028] [&_p]:!text-xs [&_.insight-copy]:!text-sm [&_span]:!text-xs [&_li>span:first-child]:!text-[10px] [&_button]:!text-xs [&_label]:!text-xs [&_select]:!text-xs [&_time]:!text-xs [&_small]:!text-xs">
@@ -382,6 +436,17 @@ export default function MatchStudio({ match }: { match: MatchData }) {
             <div className="flex items-center justify-between gap-3"><div><p className="mb-1 text-[8px] font-bold tracking-[.12em] text-[#367254]">02 / INTERPRET</p><h2 id="insight-title" className="m-0 text-lg font-bold uppercase">{words.insight}</h2></div></div>
             <div className="my-3 inline-flex gap-0.5 bg-[#edf0e9] p-0.5" role="group" aria-label="Audience wording"><button className={`min-w-[65px] px-2 py-1.5 text-[8px] ${audience === "fan" ? "bg-white font-bold text-[#1c3028] shadow-sm" : "text-[#6c796f]"}`} type="button" onClick={() => setAudience("fan")}>{words.fan}</button><button className={`min-w-[65px] px-2 py-1.5 text-[8px] ${audience === "analyst" ? "bg-white font-bold text-[#1c3028] shadow-sm" : "text-[#6c796f]"}`} type="button" onClick={() => setAudience("analyst")}>{words.analyst}</button></div>
             <article className="border-l-[3px] border-[#286248] bg-[#f0f3ed] p-[13px]"><span className="text-[7px] font-bold tracking-[.08em] text-[#728076]">{words.insight} · {words.totals}</span><h2 className="my-2 text-[17px] font-bold leading-tight">{words.headline}</h2><p className="insight-copy m-0 leading-[1.7] text-[#48594e]">{insight}</p><div className="mt-2 flex items-center gap-1.5 border-t border-[#dfe5db] pt-2 text-[7px] text-[#718075]"><b className="grid size-3 place-items-center rounded-full border border-[#a0afa2] text-[8px]">i</b>{words.caution}</div></article>
+            <div className="mt-3 border-b border-[#e1e6df] pb-3">
+              <button className="bg-[#17372d] px-3 py-2 text-xs font-bold text-white hover:bg-[#286248] disabled:cursor-wait disabled:opacity-60" type="button" onClick={analyzeCurrentMatch} disabled={analysisLoading}>
+                {analysisLoading ? "Analyzing…" : `Analyze through ${formatClock(seconds)}`}
+              </button>
+              <span className="ml-2 text-[9px] text-[#748078]">{audience === "fan" ? "Fan" : "Analyst"} view</span>
+              {analysisError && <p className="mb-0 mt-2 text-xs text-[#9b3e34]" role="alert">{analysisError}</p>}
+              {analysisResult && <article className="mt-3 border-l-[3px] border-[#355f91] bg-[#f0f3ed] p-3" aria-live="polite">
+                <p className="m-0 mb-2 text-[8px] font-bold uppercase tracking-[.08em] text-[#728076]">AI analysis through {formatClock(analysisAtSeconds ?? 0)} · {analysisAudience}</p>
+                <div className="whitespace-pre-wrap text-sm leading-relaxed text-[#48594e]">{analysisResult}</div>
+              </article>}
+            </div>
             <div className="border-b border-[#e1e6df]"><button className="flex w-full items-center gap-2 py-3 text-left text-[8px] font-bold" type="button" aria-expanded={showEvidence} onClick={() => setShowEvidence((value) => !value)}>{words.evidence}<span className="ml-auto text-[7px] text-[#879188]">{evidenceSources.length}</span><b className="text-xs text-[#286248]">{showEvidence ? "−" : "+"}</b></button>{showEvidence && <div className="grid gap-2 pb-2.5">{evidenceSources.map(({ label, value }) => <div className="grid grid-cols-[100px_1fr] gap-x-2 gap-y-0.5 text-[8px]" key={label}><strong className="row-span-2 text-[7px] text-[#367254]">{label}</strong><span>{value}</span><small className="text-[7px] text-[#7b877d]">{words.source}</small></div>)}</div>}</div>
             <p className="mt-2.5 flex items-center gap-1.5 text-[7px] text-[#7b877d]"><i className="size-[5px] rounded-full bg-[#c6a346]" /> {words.template}</p>
           </section>
