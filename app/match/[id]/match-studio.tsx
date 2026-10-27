@@ -13,7 +13,7 @@ const text = {
     pause: "Pause", play: "Play", insight: "Match intelligence", fan: "Fan", analyst: "Analyst", evidence: "Inspect evidence",
     headline: "Shot volume comparison", insufficient: "Comparable shot totals are unavailable for this match.",
     caution: "Aggregate totals do not establish tactical cause", totals: "Match statistics", totalsHint: "Counts update with replay events; possession is available at full time", source: "Supplied match totals",
-    replayView: "REPLAY SIMULATION", reference: "MATCH REFERENCE", loading: "Loading match...", matchClock: "MATCH CLOCK", measure: "MEASURE", template: "Template generated · no model request", fanShot: "recorded {awayShots} {shotUnit} compared with {homeShots} for {homeTeam}.", fanTarget: "{awayTarget} {targetUnit} for {awayTeam}, compared with {homeTarget} for {homeTeam}.", analystShot: "{awayTeam}: {awayShots} {shotUnit} ({awayTarget} {targetUnit}); {homeTeam}: {homeShots} ({homeTarget} {targetUnit}). Difference: {shotDifference} shots and {targetDifference} on target.", shotsLabel: "shots", targetLabel: "on target",
+    replayView: "REPLAY SIMULATION", reference: "MATCH REFERENCE", loading: "Loading match...", matchClock: "MATCH CLOCK", measure: "MEASURE", fanShot: "recorded {awayShots} {shotUnit} compared with {homeShots} for {homeTeam}.", fanTarget: "{awayTarget} {targetUnit} for {awayTeam}, compared with {homeTarget} for {homeTeam}.", analystShot: "{awayTeam}: {awayShots} {shotUnit} ({awayTarget} {targetUnit}); {homeTeam}: {homeShots} ({homeTarget} {targetUnit}). Difference: {shotDifference} shots and {targetDifference} on target.", shotsLabel: "shots", targetLabel: "on target",
   },
 } as const;
 
@@ -209,14 +209,14 @@ function getReplayStats(match: MatchData, seconds: number) {
   });
 }
 
-export default function MatchStudio({ match, teamSupport, onOpenPersonalization }: { match: MatchData; teamSupport: "home" | "away" | "neutral" | ""; onOpenPersonalization: () => void }) {
+export default function MatchStudio({ match, fanLevel, teamSupport, onOpenPersonalization }: { match: MatchData; fanLevel: "casual" | "hardcore" | ""; teamSupport: "home" | "away" | "neutral" | ""; onOpenPersonalization: () => void }) {
   const scoreEvent = match.events.find((event) => event.type === "score_change");
   const [seconds, setSeconds] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const timelineEventRefs = useRef(new Map<string, HTMLButtonElement>());
   const [playbackSpeed, setPlaybackSpeed] = useState(5);
-  const [audience, setAudience] = useState<Audience>("fan");
+  const [audience, setAudience] = useState<Audience>(fanLevel === "hardcore" ? "analyst" : "fan");
   const [language, setLanguage] = useState<Language>("en");
   const [showEvidence, setShowEvidence] = useState(false);
   const [showLineups, setShowLineups] = useState(false);
@@ -226,6 +226,10 @@ export default function MatchStudio({ match, teamSupport, onOpenPersonalization 
   const [analysisAtSeconds, setAnalysisAtSeconds] = useState<number | null>(null);
   const [analysisAudience, setAnalysisAudience] = useState<Audience | null>(null);
   const words = text[language];
+
+  useEffect(() => {
+    setAudience(fanLevel === "hardcore" ? "analyst" : "fan");
+  }, [fanLevel]);
 
   useEffect(() => {
     if (!playing) return;
@@ -463,7 +467,6 @@ export default function MatchStudio({ match, teamSupport, onOpenPersonalization 
               </article>}
             </div>
             <div className="border-b border-[#e1e6df]"><button className="flex w-full items-center gap-2 py-3 text-left text-[8px] font-bold" type="button" aria-expanded={showEvidence} onClick={() => setShowEvidence((value) => !value)}>{words.evidence}<span className="ml-auto text-[7px] text-[#879188]">{evidenceSources.length}</span><b className="text-xs text-[#286248]">{showEvidence ? "−" : "+"}</b></button>{showEvidence && <div className="grid gap-2 pb-2.5">{evidenceSources.map(({ label, value }) => <div className="grid grid-cols-[100px_1fr] gap-x-2 gap-y-0.5 text-[8px]" key={label}><strong className="row-span-2 text-[7px] text-[#367254]">{label}</strong><span>{value}</span><small className="text-[7px] text-[#7b877d]">{words.source}</small></div>)}</div>}</div>
-            <p className="mt-2.5 flex items-center gap-1.5 text-[7px] text-[#7b877d]"><i className="size-[5px] rounded-full bg-[#c6a346]" /> {words.template}</p>
           </section>
         </div>
 

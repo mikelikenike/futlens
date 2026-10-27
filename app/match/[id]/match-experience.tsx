@@ -95,7 +95,7 @@ export default function MatchExperience({ match, historianContext }: { match: Ma
   );
 
   if (step === "studio") {
-    return <><MatchStudio match={match} teamSupport={teamSupport} onOpenPersonalization={() => setPersonalizationOpen(true)} />{personalizationModal}</>;
+    return <><MatchStudio match={match} fanLevel={fanLevel} teamSupport={teamSupport} onOpenPersonalization={() => setPersonalizationOpen(true)} />{personalizationModal}</>;
   }
 
   return (
