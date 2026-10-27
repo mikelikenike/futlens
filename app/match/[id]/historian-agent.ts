@@ -2,6 +2,7 @@ import "server-only";
 
 import { DefaultAzureCredential } from "@azure/identity";
 import { AIProjectClient } from "@azure/ai-projects";
+import { cacheLife } from "next/cache";
 
 export type HistorianContext = {
   competition: string;
@@ -30,6 +31,17 @@ export async function generateTeamHistory(context: PersonalizedHistorianContext)
   if (!endpoint || !agentName) {
     throw new Error("AZURE_AI_PROJECT_ENDPOINT and AZURE_AI_AGENT_NAME must be configured.");
   }
+
+  return generateCachedTeamHistory(endpoint, agentName, context);
+}
+
+async function generateCachedTeamHistory(
+  endpoint: string,
+  agentName: string,
+  context: PersonalizedHistorianContext,
+) {
+  "use cache";
+  cacheLife("weeks");
 
   const openAIClient = new AIProjectClient(endpoint, new DefaultAzureCredential()).getOpenAIClient({
     azureConfig: { allowPreview: true, agentName },

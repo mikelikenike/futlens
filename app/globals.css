@@ -24,3 +24,16 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+@keyframes field-event-emphasis {
+  0% { transform: scale(0.7); }
+  10% { transform: scale(2.4); }
+  82% { transform: scale(2.4); }
+  100% { transform: scale(1); }
+}
+
+.field-event-marker {
+  display: inline-block;
+  transform-origin: center;
+  animation: field-event-emphasis 5s ease-out both;
+}

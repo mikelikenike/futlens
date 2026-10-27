@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import type { MatchData, MatchEvent, MatchPlayer, MatchQualifier } from "./types";
 
@@ -209,12 +209,13 @@ function getReplayStats(match: MatchData, seconds: number) {
   });
 }
 
-export default function MatchStudio({ match }: { match: MatchData }) {
+export default function MatchStudio({ match, teamSupport, onOpenPersonalization }: { match: MatchData; teamSupport: "home" | "away" | "neutral" | ""; onOpenPersonalization: () => void }) {
   const scoreEvent = match.events.find((event) => event.type === "score_change");
-  const startTime = scoreEvent?.timeSeconds ?? 0;
-  const [seconds, setSeconds] = useState(startTime);
+  const [seconds, setSeconds] = useState(0);
   const [playing, setPlaying] = useState(false);
-  const [playbackSpeed, setPlaybackSpeed] = useState(1);
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  const timelineEventRefs = useRef(new Map<string, HTMLButtonElement>());
+  const [playbackSpeed, setPlaybackSpeed] = useState(5);
   const [audience, setAudience] = useState<Audience>("fan");
   const [language, setLanguage] = useState<Language>("en");
   const [showEvidence, setShowEvidence] = useState(false);
@@ -230,6 +231,7 @@ export default function MatchStudio({ match }: { match: MatchData }) {
     if (!playing) return;
     const timer = window.setTimeout(() => {
       const next = Math.min(match.durationSeconds, seconds + playbackSpeed);
+      setSelectedEventId(null);
       setSeconds(next);
       if (next === match.durationSeconds) setPlaying(false);
     }, 1000);
@@ -239,9 +241,17 @@ export default function MatchStudio({ match }: { match: MatchData }) {
   const replayEvents = [...match.events].sort((first, second) => first.timeSeconds - second.timeSeconds || first.id.localeCompare(second.id));
   const eventTypes = [...new Set(replayEvents.map((event) => event.type))].sort();
   const [eventTypeFilter, setEventTypeFilter] = useState("all");
-  const visibleEvents = eventTypeFilter === "all"
-    ? replayEvents
-    : replayEvents.filter((event) => event.type === eventTypeFilter);
+  const [eventTeamFilter, setEventTeamFilter] = useState<"all" | MatchQualifier>(() => teamSupport === "home" || teamSupport === "away" ? teamSupport : "all");
+  useEffect(() => {
+    setEventTeamFilter(teamSupport === "home" || teamSupport === "away" ? teamSupport : "all");
+  }, [teamSupport]);
+  const visibleEvents = replayEvents.filter((event) =>
+    (eventTypeFilter === "all" || event.type === eventTypeFilter)
+    && (eventTeamFilter === "all" || event.competitor === eventTeamFilter),
+  );
+  useEffect(() => {
+    if (selectedEventId) timelineEventRefs.current.get(selectedEventId)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [eventTeamFilter, eventTypeFilter, selectedEventId]);
   const activeEvent = replayEvents.filter((event) => event.timeSeconds <= seconds).at(-1);
   const homeLineup = lineupAtTime(match, "home", seconds);
   const awayLineup = lineupAtTime(match, "away", seconds);
@@ -272,6 +282,9 @@ export default function MatchStudio({ match }: { match: MatchData }) {
     ...(scoreEvent ? [{ label: "EVENT / SCORE", value: [scorerName, scorerTeam?.name, eventClock(scoreEvent), scoreEvent.assist].filter(Boolean).join(" · ") }] : []),
   ];
   const isFullTime = seconds >= match.durationSeconds;
+  const hasAnalysisEvent = match.events.some((event) =>
+    event.timeSeconds <= seconds && event.type !== "match_started" && event.type !== "period_start",
+  );
   const shotUnit = isFullTime ? words.shotsLabel : "shot events";
   const targetUnit = isFullTime ? words.targetLabel : "on-target events";
 
@@ -334,13 +347,7 @@ export default function MatchStudio({ match }: { match: MatchData }) {
     <main className="min-h-screen bg-[#f1f3ed] font-sans text-[#1c3028] [&_p]:!text-xs [&_.insight-copy]:!text-sm [&_span]:!text-xs [&_li>span:first-child]:!text-[10px] [&_button]:!text-xs [&_label]:!text-xs [&_select]:!text-xs [&_time]:!text-xs [&_small]:!text-xs">
       <header className="flex h-14 items-center justify-between bg-[#17372d] px-6 text-[9px] font-bold tracking-[.1em] text-[#edf3e8] max-sm:h-12 max-sm:px-3">
         <Link className="inline-flex items-center gap-2 text-xs text-inherit no-underline" href="/" aria-label="Futlens home"><span className="grid size-6 place-items-center bg-[#d3ed64] text-base text-[#17372d]">F</span> FUTLENS</Link>
-        <div className="flex items-center gap-2 max-sm:text-[0px]"><i className="size-1.5 rounded-full bg-[#d3ed64]" /> MATCH STORYLINE STUDIO</div>
-        <label className="flex items-center gap-2 text-[8px] text-[#d1ded4]">
-          <span>Language</span>
-          <select className="rounded-sm border border-[#456054] bg-[#23483a] p-1 text-[9px] text-white max-sm:[&+span]:hidden" aria-label="Language" value={language} onChange={(event) => setLanguage(event.target.value as Language)}>
-            <option value="en">EN</option>
-          </select>
-        </label>
+        <div className="flex items-center gap-3"><span className="flex items-center gap-2 max-sm:text-[0px]"><i className="size-1.5 rounded-full bg-[#d3ed64]" /> MATCH STORYLINE STUDIO</span><button className="border border-[#456054] px-2.5 py-1.5 text-[8px] tracking-normal text-[#edf3e8] hover:bg-[#23483a]" type="button" onClick={onOpenPersonalization}>Personalize</button></div>
       </header>
 
       <div className="mx-auto w-[min(1280px,calc(100%-48px))] pb-6 max-sm:w-[calc(100%-24px)]">
@@ -374,14 +381,21 @@ export default function MatchStudio({ match }: { match: MatchData }) {
                   const details = `${team.name} · ${displayPlayerName(player)} · ${eventClock(event)}`;
                   const isGoal = event.type === "score_change";
 
-                  return <span
+                  return <button
                     key={event.id}
-                    className="absolute z-10 -translate-x-1/2 -translate-y-1/2 cursor-help text-[11px] leading-none drop-shadow-[0_1px_2px_#17372d]"
+                    className="absolute z-10 -translate-x-1/2 -translate-y-1/2 cursor-pointer border-0 bg-transparent p-0 text-[11px] leading-none drop-shadow-[0_1px_2px_#17372d]"
                     style={{ left: `${event.location.x}%`, top: `${event.location.y}%` }}
                     title={details}
-                    role="img"
                     aria-label={`${isGoal ? "Goal" : "Shot"}: ${details}`}
-                  >{isGoal ? <>&#9917;</> : <>&#10060;</>}</span>;
+                    type="button"
+                    onClick={() => {
+                      setSeconds(event.timeSeconds);
+                      setPlaying(false);
+                      setSelectedEventId(event.id);
+                      setEventTypeFilter("all");
+                      setEventTeamFilter("all");
+                    }}
+                  ><span className="field-event-marker">{isGoal ? <>&#9917;</> : <>&#10060;</>}</span></button>;
                 })}
               </div>
               <div className="absolute left-4 right-4 top-3 z-10 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 text-[7px] font-bold tracking-[.1em] text-[#eff5e4]/90 max-[480px]:left-2 max-[480px]:right-2">
@@ -425,9 +439,10 @@ export default function MatchStudio({ match }: { match: MatchData }) {
               <div className="min-w-[50px]"><input className="mb-1 block h-1 w-full cursor-pointer appearance-none bg-[linear-gradient(to_right,#286248_var(--progress),#dfe4dc_var(--progress))] [&::-webkit-slider-thumb]:size-2.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-white [&::-webkit-slider-thumb]:bg-[#286248]" aria-label="Replay time" type="range" min="0" max={match.durationSeconds} value={seconds} onChange={(event) => { setSeconds(Number(event.target.value)); setPlaying(false); }} style={{ "--progress": `${seconds / match.durationSeconds * 100}%` } as React.CSSProperties} /><div className="flex justify-between text-[7px] text-[#89938b]"><span>00:00</span><span>{formatClock(match.durationSeconds / 2)}</span><span>{formatClock(match.durationSeconds)}</span></div></div>
               <select className="border border-[#dfe4dc] bg-white p-1 text-[8px] text-[#21392e]" aria-label="Playback speed" value={playbackSpeed} onChange={(event) => setPlaybackSpeed(Number(event.target.value))}><option value={1}>1×</option><option value={5}>5×</option><option value={10}>10×</option></select>
             </div>
-            <div className="border-t border-[#e1e6df] pt-2.5"><div className="mb-2 flex flex-wrap items-center justify-between gap-2"><h2 className="m-0 text-[8px] tracking-[.1em] text-[#69786d]">{words.matchMoments} <span className="text-[#738078]">({visibleEvents.length}/{replayEvents.length})</span></h2><select className="border border-[#dfe4dc] bg-white px-2 py-1 text-xs" aria-label="Filter events by type" value={eventTypeFilter} onChange={(event) => setEventTypeFilter(event.target.value)}><option value="all">All event types</option>{eventTypes.map((type) => <option key={type} value={type}>{replayEventLabel({ id: "", type, timeSeconds: 0, clock: "", participants: [] }, language)}</option>)}</select></div>
+            <div className="border-t border-[#e1e6df] pt-2.5"><div className="mb-2 flex flex-wrap items-center justify-between gap-2"><h2 className="m-0 text-[8px] tracking-[.1em] text-[#69786d]">{words.matchMoments} <span className="text-[#738078]">({visibleEvents.length}/{replayEvents.length})</span></h2><div className="flex flex-wrap gap-1.5"><select className="border border-[#dfe4dc] bg-white px-2 py-1 text-xs" aria-label="Filter events by team" value={eventTeamFilter} onChange={(event) => setEventTeamFilter(event.target.value as "all" | MatchQualifier)}><option value="all">All teams</option><option value="home">{match.teams.home.name}</option><option value="away">{match.teams.away.name}</option></select><select className="border border-[#dfe4dc] bg-white px-2 py-1 text-xs" aria-label="Filter events by type" value={eventTypeFilter} onChange={(event) => setEventTypeFilter(event.target.value)}><option value="all">All event types</option>{eventTypes.map((type) => <option key={type} value={type}>{replayEventLabel({ id: "", type, timeSeconds: 0, clock: "", participants: [] }, language)}</option>)}</select></div></div>
               <div className="grid max-h-64 grid-cols-1 gap-1 overflow-y-auto pr-1">
-                {visibleEvents.map((event) => <button key={event.id} className={`grid min-w-0 grid-cols-[48px_15px_minmax(0,1fr)] items-start gap-2 border border-transparent px-2 py-1.5 text-left hover:border-[#bed4c2] hover:bg-[#e8f0e6] ${activeEvent?.id === event.id ? "bg-[#e8f0e6]" : "bg-[#f0f3ed]"}`} type="button" onClick={() => { setSeconds(event.timeSeconds); setPlaying(false); }}><time className="pt-0.5 text-[9px] tabular-nums text-[#67776c]">{eventClock(event)}</time><i className={`mt-1 grid size-3.5 place-items-center rounded-full text-[6px] not-italic text-white ${event.type === "score_change" ? "bg-[#e77b50]" : event.type === "match_ended" ? "bg-[#17372d]" : "border border-[#286248]"}`}>{event.type === "score_change" ? "G" : event.type === "match_ended" ? "FT" : ""}</i><span className="min-w-0"><strong className="block font-semibold">{replayEventLabel(event, language)}</strong><span className="block truncate text-[10px] font-normal text-[#6b786f]">{eventDetails(event, match) || event.id}</span></span></button>)}
+                {visibleEvents.map((event) => <button key={event.id} id={`timeline-event-${event.id}`} ref={(node) => { if (node) timelineEventRefs.current.set(event.id, node); else timelineEventRefs.current.delete(event.id); }} className={`grid min-w-0 grid-cols-[48px_15px_minmax(0,1fr)] items-start gap-2 border border-transparent px-2 py-1.5 text-left hover:border-[#bed4c2] hover:bg-[#e8f0e6] ${selectedEventId === event.id || (!selectedEventId && activeEvent?.id === event.id) ? "bg-[#e8f0e6] ring-1 ring-inset ring-[#286248]" : "bg-[#f0f3ed]"}`} type="button" onClick={() => { setSeconds(event.timeSeconds); setPlaying(false); setSelectedEventId(event.id); }}><time className="pt-0.5 text-[9px] tabular-nums text-[#67776c]">{eventClock(event)}</time><i className={`mt-1 grid size-3.5 place-items-center rounded-full text-[6px] not-italic text-white ${event.type === "score_change" ? "bg-[#e77b50]" : event.type === "match_ended" ? "bg-[#17372d]" : "border border-[#286248]"}`}>{event.type === "score_change" ? "G" : event.type === "match_ended" ? "FT" : ""}</i><span className="min-w-0"><strong className="block font-semibold">{replayEventLabel(event, language)}</strong><span className="block truncate text-[10px] font-normal text-[#6b786f]">{eventDetails(event, match) || event.id}</span></span></button>)}
+                {visibleEvents.length === 0 && <p className="m-0 bg-[#f0f3ed] px-2 py-3 text-xs text-[#748078]">No events match these filters.</p>}
               </div>
             </div>
           </section>
@@ -437,7 +452,7 @@ export default function MatchStudio({ match }: { match: MatchData }) {
             <div className="my-3 inline-flex gap-0.5 bg-[#edf0e9] p-0.5" role="group" aria-label="Audience wording"><button className={`min-w-[65px] px-2 py-1.5 text-[8px] ${audience === "fan" ? "bg-white font-bold text-[#1c3028] shadow-sm" : "text-[#6c796f]"}`} type="button" onClick={() => setAudience("fan")}>{words.fan}</button><button className={`min-w-[65px] px-2 py-1.5 text-[8px] ${audience === "analyst" ? "bg-white font-bold text-[#1c3028] shadow-sm" : "text-[#6c796f]"}`} type="button" onClick={() => setAudience("analyst")}>{words.analyst}</button></div>
             <article className="border-l-[3px] border-[#286248] bg-[#f0f3ed] p-[13px]"><span className="text-[7px] font-bold tracking-[.08em] text-[#728076]">{words.insight} · {words.totals}</span><h2 className="my-2 text-[17px] font-bold leading-tight">{words.headline}</h2><p className="insight-copy m-0 leading-[1.7] text-[#48594e]">{insight}</p><div className="mt-2 flex items-center gap-1.5 border-t border-[#dfe5db] pt-2 text-[7px] text-[#718075]"><b className="grid size-3 place-items-center rounded-full border border-[#a0afa2] text-[8px]">i</b>{words.caution}</div></article>
             <div className="mt-3 border-b border-[#e1e6df] pb-3">
-              <button className="bg-[#17372d] px-3 py-2 text-xs font-bold text-white hover:bg-[#286248] disabled:cursor-wait disabled:opacity-60" type="button" onClick={analyzeCurrentMatch} disabled={analysisLoading}>
+              <button className="bg-[#17372d] px-3 py-2 text-xs font-bold text-white hover:bg-[#286248] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-[#17372d]" type="button" onClick={analyzeCurrentMatch} disabled={analysisLoading || !hasAnalysisEvent} title={hasAnalysisEvent ? undefined : "Analysis is available after the first match event."}>
                 {analysisLoading ? "Analyzing…" : `Analyze through ${formatClock(seconds)}`}
               </button>
               <span className="ml-2 text-[9px] text-[#748078]">{audience === "fan" ? "Fan" : "Analyst"} view</span>
